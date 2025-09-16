@@ -222,8 +222,9 @@ if run_btn:
         st.info(f"Hasil & CSV ditulis ke folder: `{out_base}` — summary: `summary_{algo.lower()}.csv`")
 
 
+
 # === Export helpers (robust) ===
-# Fitur export yang aman terhadap tipe data gambar/DF dan tidak akan membuat app crash.
+# Fitur export aman + fallback: bila tidak ada yang teregistrasi di session, kita scan globals()
 try:
     import streamlit as st
     import pandas as pd
@@ -247,15 +248,12 @@ try:
             st.session_state["exports"]["dfs"][name] = df
 
     def register_img(name: str, img):
-        # Terima NumPy array atau PIL.Image; normalisasi aman
         try:
-            import numpy as _np
             from PIL import Image as _PILImage
         except Exception:
-            _np = None; _PILImage = None
+            _PILImage = None
 
         if _PILImage and isinstance(img, _PILImage.Image):
-            # simpan sebagai numpy RGB uint8
             arr = np.array(img)
             if arr.dtype != np.uint8:
                 arr = np.clip(arr, 0, 255).astype(np.uint8)
@@ -264,36 +262,42 @@ try:
 
         if isinstance(img, np.ndarray) and img.size > 0:
             arr = img
-            # Jika float, skala ke 0..255
             if arr.dtype.kind == "f":
                 arr = np.clip(arr * (255.0 if arr.max() <= 1.0 else 1.0), 0, 255).astype(np.uint8)
             elif arr.dtype != np.uint8:
                 arr = np.clip(arr, 0, 255).astype(np.uint8)
             st.session_state["exports"]["imgs"][name] = arr
 
+    def _collect_dataframes(namespace):
+        return {k:v for k,v in namespace.items()
+                if (not k.startswith("_"))
+                and isinstance(v, pd.DataFrame)
+                and not v.empty}
+
+    def _collect_images(namespace):
+        return {k:v for k,v in namespace.items()
+                if (not k.startswith("_"))
+                and isinstance(v, np.ndarray)
+                and v.size > 0}
+
     def _to_csv_bytes(df: pd.DataFrame) -> bytes:
         return df.to_csv(index=False).encode()
 
     def _to_png_bytes(img: "np.ndarray") -> bytes:
-        # Kodekan ke PNG tanpa asumsi channel: GRAY/RGB/BGR
         if cv2 is None:
-            # fallback via PIL
             from PIL import Image
             import io as _io
             if img.ndim == 2:
                 pil = Image.fromarray(img)
             elif img.ndim == 3 and img.shape[2] == 3:
-                # asumsikan RGB
                 pil = Image.fromarray(img)
             else:
                 raise RuntimeError("Format gambar tidak dikenali untuk export.")
             buf = _io.BytesIO()
             pil.save(buf, format="PNG")
             return buf.getvalue()
-        # Dengan OpenCV
         arr = img
         if arr.ndim == 3 and arr.shape[2] == 3:
-            # anggap RGB, OpenCV butuh BGR untuk konsistensi visual
             arr = arr[:, :, ::-1]
         ok, buf = cv2.imencode(".png", arr)
         if not ok:
@@ -303,9 +307,21 @@ try:
     def export_sidebar():
         with st.sidebar:
             st.markdown("### 📤 Export")
-            st.caption("Hasil terakhir tersimpan di session, aman untuk diunduh kapan saja.")
+            st.caption("Hasil terakhir tersimpan di session.
+Jika kosong, sistem akan mendeteksi otomatis dari variabel global.")
 
-            dfs = st.session_state["exports"]["dfs"]
+            # Primary: use session-registered objects
+            dfs = dict(st.session_state["exports"]["dfs"])
+            imgs = dict(st.session_state["exports"]["imgs"])
+
+            # Fallback: scan globals if nothing registered
+            if not dfs and not imgs:
+                g = globals()
+                dfs = _collect_dataframes(g)
+                imgs = _collect_images(g)
+                if dfs or imgs:
+                    st.info("Menggunakan fallback: mendeteksi objek dari globals().")
+
             if dfs:
                 names = sorted(dfs.keys())
                 picked = st.selectbox("Pilih DataFrame (CSV)", names, key="exp_pick_df")
@@ -316,7 +332,6 @@ try:
                         (RUNS_DIR / f"{picked}.csv").write_bytes(csvb)
                         st.success(f"Saved: runs/{picked}.csv")
 
-            imgs = st.session_state["exports"]["imgs"]
             if imgs:
                 names_i = sorted(imgs.keys())
                 picked_i = st.selectbox("Pilih Gambar (PNG)", names_i, key="exp_pick_img")
@@ -330,12 +345,11 @@ try:
                     except Exception as e:
                         st.warning(f"Gagal menyiapkan unduhan gambar: {e}")
 
-    # Panggil sidebar export setiap rerun
     export_sidebar()
 except Exception:
-    # Jangan pernah membuat app crash karena fitur export
     pass
 # === /Export helpers (robust) ===
+
 
 
 
