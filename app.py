@@ -309,8 +309,6 @@ try:
             st.markdown("### 📤 Export")
             st.caption("""Hasil terakhir tersimpan di session. Jika kosong, sistem akan mendeteksi otomatis dari variabel global.""")
 
-Jika kosong, sistem akan mendeteksi otomatis dari variabel global.")
-
             # Primary: use session-registered objects
             dfs = dict(st.session_state["exports"]["dfs"])
             imgs = dict(st.session_state["exports"]["imgs"])
