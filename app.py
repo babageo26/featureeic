@@ -307,7 +307,8 @@ try:
     def export_sidebar():
         with st.sidebar:
             st.markdown("### 📤 Export")
-            st.caption("Hasil terakhir tersimpan di session.
+            st.caption("""Hasil terakhir tersimpan di session. Jika kosong, sistem akan mendeteksi otomatis dari variabel global.""")
+
 Jika kosong, sistem akan mendeteksi otomatis dari variabel global.")
 
             # Primary: use session-registered objects
